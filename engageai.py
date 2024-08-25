@@ -1,3 +1,4 @@
+
 import cv2
 from collections import Counter, deque
 from deepface import DeepFace
@@ -26,6 +27,15 @@ def ensure_display_status(status, default="Unknown"):
     return status if status else default
 
 def is_looking_at_camera(eyes):
+    """
+    Determines if the person is looking at the camera based on eye positions.
+
+    Args:
+        eyes: List of detected eyes, each represented as a tuple (x, y, w, h).
+
+    Returns:
+        bool: True if the person is likely looking at the camera, False otherwise.
+    """
     if len(eyes) != 2:
         return False, "Not Looking at Camera"  # We need exactly two eyes to make a reliable estimate
 
@@ -49,26 +59,51 @@ def is_looking_at_camera(eyes):
     vertical_dist_left = abs(left_eye_center[1] - midpoint[1])
     vertical_dist_right = abs(right_eye_center[1] - midpoint[1])
 
+    # Sensitivity threshold (adjust as needed)
+    sensitivity = 0.1
+
     # If the vertical distances are similar, the person is more likely looking at the camera
-    # Adjust the sensitivity by changing the multiplier
-    if vertical_dist_left < eye_distance * 0.2 and vertical_dist_right < eye_distance * 0.2:
+    if vertical_dist_left < eye_distance * sensitivity and vertical_dist_right < eye_distance * sensitivity:
         return True, "Looking at Camera"
     else:
         return False, "Not Looking at Camera"
 
 def classify_engagement(face_info, eyes):
-    dominant_emotion = face_info.get('dominant_emotion', 'neutral')  # Default to 'neutral' if key not found
+    """
+    Classifies engagement level based on dominant emotion and gaze.
+
+    Args:
+        face_info: Dictionary containing emotion analysis results from DeepFace.
+        eyes: List of detected eyes.
+
+    Returns:
+        str: Engagement level (Engaged, Disengaged, Uncertain).
+        str: Gaze status (Looking at Camera, Not Looking at Camera).
+    """
+    dominant_emotion = face_info.get('dominant_emotion', None)
     looking_at_camera, gaze_status = is_looking_at_camera(eyes)
-    
+
     if looking_at_camera:
         if dominant_emotion in engaged_emotions:
             return "Engaged", gaze_status
+        elif dominant_emotion in disengaged_emotions:
+            return "Disengaged", gaze_status
         else:
-            return "Uncertain", gaze_status
+            return f"Uncertain (Emotion: {ensure_display_status(dominant_emotion)})", gaze_status
     else:
         return "Disengaged", gaze_status
 
 def display_info_on_frame(frame, engagement, looking_status, face_position=None, global_status=False):
+    """
+    Displays engagement and gaze status on the frame.
+
+    Args:
+        frame: The video frame.
+        engagement: Engagement level.
+        looking_status: Gaze status.
+        face_position: Tuple (x, y, w, h) representing the face rectangle.
+        global_status: Whether to display global status or individual status.
+    """
     engagement = ensure_display_status(engagement, "Unknown")
     looking_status = ensure_display_status(looking_status, "Unknown")
 
@@ -90,7 +125,7 @@ def display_info_on_frame(frame, engagement, looking_status, face_position=None,
             text_x_look = int((frame.shape[1] - text_size_look[0]) / 2)
             text_y_look = text_y_eng + text_size_look[1] + 10
             cv2.putText(frame, looking_text, (text_x_look, text_y_look), cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_color, font_thickness)
-        
+
         else:
             # Display individual engagement and gaze status near the face
             engagement_text = f"Engagement: {engagement}"
@@ -107,11 +142,20 @@ def display_info_on_frame(frame, engagement, looking_status, face_position=None,
             # Display the status text above the rectangle
             cv2.putText(frame, engagement_text, (x, y - 20), cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_color, font_thickness)
             cv2.putText(frame, looking_text, (x, y - 40), cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_color, font_thickness)
-    
+
     except Exception as e:
         print(f"Error displaying text on frame: {e}")
 
 def analyze_and_display(frame):
+    """
+    Analyzes faces in the frame for engagement and gaze, and displays results.
+
+    Args:
+        frame: The video frame.
+
+    Returns:
+        The frame with overlaid information.
+    """
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
@@ -157,20 +201,29 @@ def analyze_and_display(frame):
             smoothed_value = sum(engagement_history) / len(engagement_history)
         else:
             smoothed_value = engagement_numeric
-        
+
         smoothed_engagement_history.append(smoothed_value)
 
     return frame
 
 def draw_graph_on_frame(frame):
+    """
+    Draws a smoothed engagement graph on the frame.
+
+    Args:
+        frame: The video frame.
+
+    Returns:
+        The frame with the overlaid graph.
+    """
     # Create a Matplotlib figure and axis
     fig, ax = plt.subplots(figsize=(4, 2))
     ax.plot(smoothed_engagement_history, label='Smoothed Engagement Level')
     ax.set_ylim(-0.1, 1.1)
     ax.set_xlim(0, len(smoothed_engagement_history))  # Adjust X-axis to fit the graph data
-    ax.set_title('Smoothed Engagement Level Dynamics')
+    ax.set_title('Engagement Level Dynamics')
     ax.set_xlabel('Time (frames)')
-    ax.set_ylabel('Smoothed Engagement Level')
+    ax.set_ylabel('Engagement Level')
     ax.legend(loc='upper right')
     fig.tight_layout()  # Ensure no clipping
 
@@ -197,6 +250,9 @@ def draw_graph_on_frame(frame):
     return frame
 
 def main():
+    """
+    Main function to capture video, analyze engagement, and display results.
+    """
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         print("Error: Could not open video stream from camera.")
@@ -223,3 +279,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
